@@ -272,7 +272,6 @@ If[$VersionNumber >=3 ,(
 $HistoryLength=1;
 $RadDir2=ToFileName[{$TopDirectory,"AddOns","Applications","Radia"}];
 $RadDir1=ToFileName[{$RadDir2},"Radia.exe"];
-NotebookOpen[ToFileName[{$RadDir2},"RadiaTopics.nb"]];
 )];
 
 If[$VersionNumber <3 ,($RadDir1=StringJoin[$RadDir,"Radia.exe"];)];
