@@ -1,5 +1,10 @@
 (* ::Package:: *)
 
+(* Modified by I.M., 2025 *)
+
+(* Added RadFldPtcTrj with API matching radFldPtcTrj *)
+(* Uses NDSolve for integration allowing integration method specification *)
+
 $RadVersion=4.32  (* March 2017 *)
 
 (*___ ___ ___ ___ ___ _   Copyright Notice   ___ ___ ___ ___ ___ ___ ___ ___ ___ ___ _
@@ -89,7 +94,7 @@ RadPlot3DOptions::usage="RadPlot3DOptions[] sets Default Options for the Graphic
 
 RadObjExtRtg::usage="RadObjExtRtg[{{x1,y1,z1},{Wx1,Wy1}},{{x2,y2,z2},{Wx2,Wy2}},{Mx,My,Mz}:{0,0,0}] creates a magnetized polyhedron volume bound by six faces. Two faces are rectangles parallel to each other and perpendicular to the z direction. The rectangles 1 and 2 are defined by their centers of gravity {x1,y1,z1}, {x2,y2,z2} and dimensions in x and y directions {Wx1,Wy1}, {Wx2,Wy2}. The other 4 faces are trapezoids and connect the sides of the rectangle 1 and 2 which are parallel to each other. {Mx,My,Mz} is the magnetization."
 
-
+RadFldPtcTrj::usage="RadFldPtcTrj[obj,E,{x0,dxdy0,z0,dzdy0},{y0,y1}, np] computes transverse coordinates and its derivatives (angles) of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default options). The particle energy is E [GeV], initial transverse coordinates and derivatives are {x0,dxdy0,z0,dzdy0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters and angles in radians."
 
 (* --------- Plot Options --------- *)
 
@@ -257,6 +262,42 @@ Close[file];
 radUtiDmpPrs[dmp]
 ];
 
+(* --------- RadFldPtcTrj --------- *)
+
+ClearAll[RadFldPtcTrj] ;
+Options[RadFldPtcTrj] = {
+	Method -> {"FixedStep", Method -> {"StiffnessSwitching",  Method->{"ExplicitRungeKutta", Automatic}}}
+} ;
+
+RadFldPtcTrj[obj_, E_, {x0_, dxdy0_, z0_, dzdy0_}, {y0_, y1_}, np_, options:OptionsPattern[]] := Module[
+	{alpha, bx, by, bz, system, x, xp, z, zp, xi, xpi, zi, zpi, y, solver, table, functions, positions},
+	alpha = (0.299792458/E)/1000.0 ;
+	bx[x_?NumericQ, y_?NumericQ, z_?NumericQ] := bx[x, y, z] = radFld[obj, "bx", {x, y, z}] ;
+	by[x_?NumericQ, y_?NumericQ, z_?NumericQ] := by[x, y, z] = radFld[obj, "by", {x, y, z}] ;
+	bz[x_?NumericQ, y_?NumericQ, z_?NumericQ] := bz[x, y, z] = radFld[obj, "bz", {x, y, z}] ;
+	system = {
+		x'[y] == xp[y],
+		z'[y] == zp[y],
+		xp'[y] == -alpha/Sqrt[1 + xp[y]^2 + zp[y]^2]*(zp[y]*by[x[y], y, z[y]] + (1 + xp[y]^2)*bz[x[y], y, z[y]] + xp[y]*zp[y]*bx[x[y], y, z[y]]),
+		zp'[y] == +alpha/Sqrt[1 + xp[y]^2 + zp[y]^2]*(xp[y]*by[x[y], y, z[y]] + (1 + zp[y]^2)*bx[x[y], y, z[y]] + xp[y]*zp[y]*bz[x[y], y, z[y]]),
+		x[y0] == xi,
+		xp[y0] == xpi,
+		z[y0] == zi,
+		zp[y0] == zpi
+	} ;
+	solver = ParametricNDSolveValue[
+		system,
+		{x, xp, z, zp},
+		{y, y0, y1},
+		{xi, xpi, zi, zpi},
+		Method -> OptionValue[Method],
+		StartingStepSize -> (y1 - y0)/np,
+		MaxStepSize  -> (y1 - y0)/np
+	] ;
+	functions = solver[x0, dxdy0, z0, dzdy0] ;
+	positions = Subdivide[y0, y1, np - 1] ;
+	Map[Flatten, Transpose[{positions, Map[Function[{position}, Through[functions[position]]], positions]}]]
+] ;
 
 (* --------- Only Usefull for Mathmatica 2.2 --------- *)
 
