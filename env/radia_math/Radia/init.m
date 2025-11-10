@@ -1,9 +1,10 @@
 (* ::Package:: *)
 
 (* Modified by I.M., 2025 *)
-
 (* Added RadFldPtcTrj with API matching radFldPtcTrj *)
 (* Uses NDSolve for integration allowing integration method specification *)
+(* Tracking utilities, transport matrix generation, drift-kick-drift tracking with kick maps *)
+(* Added utilities for tracking from RadiaToTrack.nb *)
 
 $RadVersion=4.32  (* March 2017 *)
 
@@ -262,6 +263,85 @@ Close[file];
 radUtiDmpPrs[dmp]
 ];
 
+(* --------- Part of RadiaToTrack.nb --------- *)
+
+harm[gg_,typ_,per_,pos_,n_:1]:=Module[
+	{c,s,t},
+	nn=19*n;
+	t=radFldLst[gg,typ,pos-{0,per/2,0},pos+{0,per/2,0},nn];
+	t[[nn]] /=2;t[[1]] /=2;
+	c=Table[Cos[n*2*\[Pi]*(i-1)/(nn-1)],{i,1,nn}];
+	s=Table[Sin[n*2*\[Pi]*(i-1)/(nn-1)],{i,1,nn}];
+	c=Apply[Plus,c*t]*2/(nn-1);
+	s=Apply[Plus,s*t]*2/(nn-1);
+	{Sqrt[c*c+s*s],ArcTan[s/c]}
+];
+
+brms[gg_,typ_,per_,pos_,n_:1]:=Module[
+	{s,t},
+	nn=Round[9*n];
+	t=radFldLst[gg,typ,pos-{0,per/2,0},pos+{0,per/2,0},nn];
+	t=t*t;
+	t[[nn]] /=2;t[[1]] /=2;
+	s=Sqrt[Apply[Plus,t]/(nn-1)]
+];
+
+(* return the fundamental in keV  *)
+fund[gg_,p_,per_,ener_]:=Module[
+	{bx,bz},
+	bz=harm[gg,"bz",per,{0,0,0},1][[1]];
+	bx=harm[gg,"bx",per,{0,0,0},1][[1]];
+	9.5*ener*ener/per/(1+0.5*(0.0934*per*bz)^2+0.5*(0.0934*per*bx)^2)
+];
+
+(* en T2mm3  *)
+pot[gg_,{x_,z_},per_,len_,prec_:1]:=Module[
+	{tx,tz},
+	tz=harm[gg,"bz",per,{x,0,z},1][[1]];
+	tx=harm[gg,"bx",per,{x,0,z},1][[1]];
+	0.5*(tx*tx+tz*tz)*len*(per/2/Pi)^2
+];
+
+(* ener in GeV per and len in millimeter angx, angz and in micro-rad  vx , vz in meter-1  *)
+
+(* ener in GeV per and len in millimeter 
+ angx,angz and in micro-rad 
+vx , vz in meter-1  *)
+
+angx[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
+	{p1,p2,h},
+	h=0.2;
+	p1=pot[gg,{x-h/2,z},per,len,prec];
+	p2=pot[gg,{x+h/2,z},per,len,prec];
+	(p2-p1)/h*0.5*(0.2998/ener)^2
+] ;
+
+angz[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
+	{p1,p2,h},
+	h=0.2;
+	p1=pot[gg,{x,z-h/2},per,len,prec];
+	p2=pot[gg,{x,z+h/2},per,len,prec];
+	(p2-p1)/h*0.5*(0.2998/ener)^2
+];
+
+vx[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
+	{p1,p2,p3,h},
+	h=0.2;
+	p1=pot[gg,{x-h/2,z},per,len,prec];
+	p2=pot[gg,{x,z},per,len,prec];
+	p3=pot[gg,{x+h/2,z},per,len,prec];
+	4*(p1+p3-2*p2)/h^2*0.5*(0.2998/ener)^2
+] ;
+
+vz[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
+	{p1,p2,p3,h},
+	h=0.2;
+	p1=pot[gg,{x,z-h/2},per,len,prec];
+	p2=pot[gg,{x,z},per,len,prec];
+	p3=pot[gg,{x,z+h/2},per,len,prec];
+	4*(p1+p3-2*p2)/h^2*0.5*(0.2998/ener)^2
+] ;
+
 (* --------- RadFldPtcTrj --------- *)
 
 ClearAll[RadFldPtcTrj] ;
@@ -297,6 +377,66 @@ RadFldPtcTrj[obj_, E_, {x0_, dxdy0_, z0_, dzdy0_}, {y0_, y1_}, np_, options:Opti
 	functions = solver[x0, dxdy0, z0, dzdy0] ;
 	positions = Subdivide[y0, y1, np - 1] ;
 	Map[Flatten, Transpose[{positions, Map[Function[{position}, Through[functions[position]]], positions]}]]
+] ;
+
+(* Tracking utilities *)
+(* Initial condition transport, linear transport matrix generation and symplectification *)
+
+ClearAll[transport] ;
+transport::usage = "transport[object, energy, {start, stop}, steps, solver][{x, xp, z, zp}] -- transport initial condition (x and z in meters)" ;
+transport[object_, energy_, {start_, stop_}, steps_, solver_:radFldPtcTrj][{x_, xp_, z_, zp_}] := Block[
+	{orbit, X, XP, Z, ZP},
+	{X, XP, Z, ZP} = {1000.0*x, xp, 1000.0*z, zp} ;
+	{X, XP, Z, ZP} = Rest[Last[solver[object, energy, {X, XP, Z, ZP}, {start, stop}, steps]]] ;
+	{X/1000.0, XP, Z/1000.0, ZP}
+] ;
+
+ClearAll[matrix] ;
+matrix::usage = "matrix[object, energy, {start, stop}, steps, epsilon, solver] -- compute transport matrix (x and z in meters)" ;
+matrix[object_, energy_, {start_, stop_}, steps_, epsilon_, solver_:radFldPtcTrj] := Block[
+	{initial, positive, negative},
+	positive = transport[object, energy, {start, stop}, steps, solver] /@ (+epsilon*IdentityMatrix[4]) ;
+	negative = transport[object, energy, {start, stop}, steps, solver] /@ (-epsilon*IdentityMatrix[4]) ;
+	Transpose[(positive - negative)/(2*epsilon)]
+] ;
+
+ClearAll[symplectic$block] ;
+symplectic$block = {{0, 1}, {-1, 0}} ;
+
+ClearAll[symplectic$identity] ;
+symplectic$identity[dimension_] := KroneckerProduct[IdentityMatrix[dimension], symplectic$block] ;
+
+ClearAll[symplectify] ;
+symplectify::usage = "symplectify[matrix] -- symplectify given matrix (symplectic projection)" ;
+symplectify[matrix_] := Block[
+  {size, dimension, E, S, V, W},
+  size = Length[matrix] ;
+  dimension = 1/2*size ;
+  E = IdentityMatrix[size] ;
+  S = symplectic$identity[dimension] ;
+  V = S.(E - matrix).LinearSolve[E + matrix, E] ;
+  W = 1/2*(V + Transpose[V]) ;
+  LinearSolve[S + W, S - W]
+] ;
+
+ClearAll[track] ;
+track::usage = "track[object, energy, period, count][{x, xp, z, zp}] -- drift-kick-drift tracking (period in mm, x and z in m)" ;
+track[object_, energy_, period_, count_][{x_, xp_, z_, zp_}] := Block[
+	{drift, X, XP, Z, ZP},
+	drift = {{1, period/2/1000.0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, period/2/1000.0}, {0, 0, 0, 1}} ; 
+	{X, XP, Z, ZP} = {x, xp, z, zp} ;
+	Do[
+		{X, XP, Z, ZP} = drift.{X, XP, Z, ZP} ;
+		{X, XP, Z, ZP} = {
+			X,
+			XP - angx[object, 10.0^3*{X, Z}, period, period, energy]*10^-6, 
+			Z,
+			ZP - angz[object, 10.0^3*{X, Z}, period, period, energy]*10^-6
+		} ;
+		{X, XP, Z, ZP} = drift.{X, XP, Z, ZP} ;
+		, count
+	] ;
+	{X, XP, Z, ZP}
 ] ;
 
 (* --------- Only Usefull for Mathmatica 2.2 --------- *)
