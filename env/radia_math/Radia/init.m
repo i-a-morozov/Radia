@@ -383,18 +383,18 @@ RadFldPtcTrj[obj_, E_, {x0_, dxdy0_, z0_, dzdy0_}, {y0_, y1_}, np_, options:Opti
 ClearAll[RadFldPtcTrjCnn];
 Options[RadFldPtcTrjCnn] = {
 	"Delta" -> {0.1, 0.1},
-	Method -> {"FixedStep", Method -> {"StiffnessSwitching",Method -> {"ExplicitRungeKutta", Automatic}}},
+	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}}
 } ;
-RadFldPtcTrjCnn::usage="RadFldPtcTrjCnn[obj, E, dE, {qx0, px0, qz0, pz0}, {y0, y1}, np] computes transverse canonical coordinates of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default options). The particle energy is E [GeV], initial transverse canonical coordinates are {qx0, px0, qz0, pz0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters." ;
-RadFldPtcTrjCnn[obj_, E_, dE_, {qx0_, px0_, qz0_, pz0_}, {y0_, y1_}, np_, options : OptionsPattern[]] := Block[
+RadFldPtcTrjCnn::usage="RadFldPtcTrjCnn[obj, E, dE, {qx0, px0, qz0, pz0}, {y0, y1}, np, {extAx, extAy, extAz}] computes transverse canonical coordinates of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default options). The particle energy is E [GeV], initial transverse canonical coordinates are {qx0, px0, qz0, pz0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters." ;
+RadFldPtcTrjCnn[obj_, E_, dE_, {qx0_, px0_, qz0_, pz0_}, {y0_, y1_}, np_, {extAx_, extAy_, extAz_}, options : OptionsPattern[]] := Block[
 	{alpha, Ax, Ay, Az, ax, ay, az, daxdx, daydx, dazdx, daxdz, daydz, dazdz, hx, hz, flow, system, y, qx, qz, px, pz, qxi, qzi, pxi, pzi, solver, functions, positions},
 	alpha = -(0.299792458/E)/1000.0 ;
 	Ax[x_?NumericQ, y_?NumericQ, z_?NumericQ] := Ax[x, y, z] = radFld[obj, "ax", {x, y, z}] ;
 	Ay[x_?NumericQ, y_?NumericQ, z_?NumericQ] := Ay[x, y, z] = radFld[obj, "ay", {x, y, z}] ;
 	Az[x_?NumericQ, y_?NumericQ, z_?NumericQ] := Az[x, y, z] = radFld[obj, "az", {x, y, z}] ;
-	ax[x_?NumericQ, y_?NumericQ, z_?NumericQ] := alpha*Ax[x, y, z] ;
-	ay[x_?NumericQ, y_?NumericQ, z_?NumericQ] := alpha*Ay[x, y, z] ;
-	az[x_?NumericQ, y_?NumericQ, z_?NumericQ] := alpha*Az[x, y, z] ;
+	ax[x_?NumericQ, y_?NumericQ, z_?NumericQ] := alpha*Ax[x, y, z] + extAx[x, y, z] ;
+	ay[x_?NumericQ, y_?NumericQ, z_?NumericQ] := alpha*Ay[x, y, z] + extAy[x, y, z] ;
+	az[x_?NumericQ, y_?NumericQ, z_?NumericQ] := alpha*Az[x, y, z] + extAz[x, y, z] ;
 	daxdx[x_?NumericQ, y_?NumericQ, z_?NumericQ] := daxdx[x, y, z] = (ax[x + hx, y, z] - ax[x - hx, y, z])/(2 hx) ;
 	daydx[x_?NumericQ, y_?NumericQ, z_?NumericQ] := daydx[x, y, z] = (ay[x + hx, y, z] - ay[x - hx, y, z])/(2 hx) ;
 	dazdx[x_?NumericQ, y_?NumericQ, z_?NumericQ] := dazdx[x, y, z] = (az[x + hx, y, z] - az[x - hx, y, z])/(2 hx) ;
@@ -443,26 +443,27 @@ RadFldPtcTrjCnn[obj_, E_, dE_, {qx0_, px0_, qz0_, pz0_}, {y0_, y1_}, np_, option
 	Map[Flatten, Transpose[{positions, Map[Function[{position}, Through[functions[position]]], positions]}]]
 ] ;
 
-(* --------- Canonical tracking utilities --------- *)
-
 ClearAll[transport] ;
 Options[transport] = {
 	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}},
 	"Thin" -> True
 } ;
-transport::usage = "transport[object, energy, delta, {start, stop}, steps, solver][{qx, px, qz, pz}] -- track canonical initial condition (x, z in meters) through slope-based solver " ;
-transport[object_, energy_, delta_, {start_, stop_}, steps_, solver_:radFldPtcTrj, options:OptionsPattern[]][state_] := Block[
-	{QX, PX, QZ, PZ, X, XP, Z, ZP},
+transport::usage = "transport[object, energy, delta, {start, stop}, steps, angles, solver][{qx, px, qz, pz}] -- track canonical initial condition (qx, px, qz, pz) with (qx, qz in m) through slope-based solver (x and z in mm)" ;
+transport[object_, energy_, delta_, {start_, stop_}, steps_, angles_:{0.0, 0.0, 0.0, 0.0}, solver_:radFldPtcTrj, options:OptionsPattern[]][state_] := Block[
+	{QX, PX, QZ, PZ, X, XP, Z, ZP, CXI, CZI, CXF, CZF},
 	{QX, PX, QZ, PZ} = state ;
+	{CXI, CZI, CXF, CZF} = angles ;
 	If[
 		OptionValue["Thin"],
 		{QX, PX, QZ, PZ} = {QX - 1/2*(stop - start)/1000.0*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ - 1/2*(stop - start)/1000.0*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
 	] ;
+	{QX, PX, QZ, PZ} = {QX, PX + CXI, QZ, PZ + CZI} ;
     {X, XP, Z, ZP} = {QX, PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], QZ, PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2]} ;
     {X, XP, Z, ZP} = {1000.0*X, XP, 1000.0*Z, ZP} ;
     {X, XP, Z, ZP} = Rest[Last[solver[object, energy*(1 + delta), {X, XP, Z, ZP}, {start, stop}, steps, Sequence @@ FilterRules[options, Options[NDSolve]]]]] ;
     {X, XP, Z, ZP} = {X/1000.0, XP, Z/1000.0, ZP} ;
     {QX, PX, QZ, PZ} = {X, (1 + delta)*XP/Sqrt[1 + XP^2 + ZP^2], Z, (1 + delta)*ZP/Sqrt[1 + XP^2 + ZP^2]} ;
+    {QX, PX, QZ, PZ} = {QX, PX + CXF, QZ, PZ + CZF} ;
 	If[
 		OptionValue["Thin"],
 		{QX, PX, QZ, PZ} = {QX - 1/2*(stop - start)/1000.0*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ - 1/2*(stop - start)/1000.0*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
@@ -470,9 +471,9 @@ transport[object_, energy_, delta_, {start_, stop_}, steps_, solver_:radFldPtcTr
     {QX, PX, QZ, PZ}
 ] ;
 
-ClearAll[track] ;
-track::usage = "track[object, energy, delta, period, count][{qx, px, qz, pz}] -- drift-kick-drift kick map canonical tracking (period in mm, x and z in m)" ;
-track[object_, energy_, delta_, period_, count_][state_] := Block[
+ClearAll[dkd] ;
+dkd::usage = "dkd[object, energy, delta, period, count][{qx, px, qz, pz}] -- drift-kick-drift kick map canonical tracking (period in mm, x and z in m)" ;
+dkd[object_, energy_, delta_, period_, count_][state_] := Block[
     {QX, PX, QZ, PZ, X, XP, Z, ZP, DL},
     {QX, PX, QZ, PZ} = state ;
     DL = period/2/1000.0 ;
@@ -494,7 +495,7 @@ track[object_, energy_, delta_, period_, count_][state_] := Block[
 	{QX, PX, QZ, PZ}
 ] ;
 
-(* --------- Transport matrix generation --------- *)
+(* --------- Transport matrix --------- *)
 
 ClearAll[identity] ;
 identity[dimension_] := KroneckerProduct[IdentityMatrix[dimension], {{0, 1}, {-1, 0}}] ;
@@ -517,26 +518,26 @@ Options[matrix] = {
 	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}},
 	"Thin" -> True
 } ;
-matrix::usage = "matrix[object, energy, delta, {start, stop}, steps, epsilon, solver] -- compute transport matrix " ;
-matrix[object_, energy_, delta_, {start_, stop_}, steps_, orbit_, epsilon_, solver_:radFldPtcTrj, options:OptionsPattern[]] := Block[
+matrix::usage = "matrix[object, energy, delta, {start, stop}, steps, angles, epsilon, solver] -- compute transport matrix " ;
+matrix[object_, energy_, delta_, {start_, stop_}, steps_, angles_, epsilon_, solver_:radFldPtcTrj, options:OptionsPattern[]] := Block[
 	{initial, positive, negative},
-	positive = transport[object, energy, delta, {start, stop}, steps, solver, options] /@ (orbit + epsilon*IdentityMatrix[4]) ;
-	negative = transport[object, energy, delta, {start, stop}, steps, solver, options] /@ (orbit - epsilon*IdentityMatrix[4]) ;
+	positive = transport[object, energy, delta, {start, stop}, steps, angles, solver, options] /@ (+ epsilon*IdentityMatrix[4]) ;
+	negative = transport[object, energy, delta, {start, stop}, steps, angles, solver, options] /@ (- epsilon*IdentityMatrix[4]) ;
 	Transpose[(positive - negative)/(2*epsilon)]
 ] ;
 
 ClearAll[parameterize] ;
 Options[parameterize] = {
-	Method -> {"FixedStep", Method -> {"StiffnessSwitching",Method -> {"ExplicitRungeKutta", Automatic}}},
+	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}},
 	"Thin" -> True
 } ;
-parameterize::usage = "parameterize[object, energy, delta, {start, stop}, steps, epsilon, solver] -- parameterize transport matrix" ;
-parameterize[object_, energy_, delta_, {start_, stop_}, steps_, orbit_, epsilon_, solver_:radFldPtcTrj, options:OptionsPattern[]] := Block[
+parameterize::usage = "parameterize[object, energy, delta, {start, stop}, steps, angles, epsilon, solver] -- parameterize transport matrix" ;
+parameterize[object_, energy_, delta_, {start_, stop_}, steps_, angles_, epsilon_, solver_:radFldPtcTrj, options:OptionsPattern[]] := Block[
 	{transport, symplectic, positive, negative, derivative, identity, A, B},
 	transport = matrix[object, energy, 0.0, {start, stop}, steps, epsilon, solver, options] ;
 	symplectic = symplectify[transport] ;
-	positive = matrix[object, energy, +delta, {start, stop}, steps, orbit, epsilon, solver, options] ;
-	negative = matrix[object, energy, -delta, {start, stop}, steps, orbit, epsilon, solver, options] ;
+	positive = matrix[object, energy, +delta, {start, stop}, steps, angles, epsilon, solver, options] ;
+	negative = matrix[object, energy, -delta, {start, stop}, steps, angles, epsilon, solver, options] ;
 	derivative = (positive - negative)/2/delta ;
 	identity = {{0, 1, 0, 0}, {-1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, -1, 0}} ;
 	A = Re[- identity . MatrixLog[symplectic]] ;
