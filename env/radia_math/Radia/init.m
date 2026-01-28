@@ -472,7 +472,7 @@ dzp[                          (* -- one-(super) period vertical angle kick (mura
 
 ClearAll[kx] ;
 Options[kx] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
-kx::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute horizontal focusing strength (1/m) using central finite difference" ;
+kx::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute horizontal focusing strength using central finite difference" ;
 kx[                           (* -- horizontal focusing strength (1/m) *)
     object_,                  (* -- radia object *)
     {x_, z_},                 (* -- transverse evaluation point (mm) *)
@@ -486,12 +486,12 @@ kx[                           (* -- horizontal focusing strength (1/m) *)
     pa = potential[object, {x - delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pb = potential[object, {x, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pc = potential[object, {x + delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
-    4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
+    10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
 ] ;
 
 ClearAll[kz] ;
 Options[kz] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
-kz::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute vertical focusing strength (1/m) using central finite difference" ;
+kz::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute vertical focusing strength using central finite difference" ;
 kz[                           (* -- vertical focusing strength (1/m) *)
     object_,                  (* -- radia object *)
     {x_, z_},                 (* -- transverse evaluation point (mm) *)
@@ -505,7 +505,7 @@ kz[                           (* -- vertical focusing strength (1/m) *)
     pa = potential[object, {x, z - delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pb = potential[object, {x, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pc = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
-    4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
+    10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
 ] ;
 
 ClearAll[dkd] ;
@@ -543,6 +543,24 @@ dkd[                          (* -- rdrift-kick-drift canonical tracking *)
 	] ;
     {QX, PX, QZ, PZ} = {QX - count*DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ - count*DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
 	{QX, PX, QZ, PZ}
+] ;
+
+ClearAll[idtm] ;
+idtm::usage = "idtm[{kx, kz}, {np, lp}, dp] -- compute id thin insertion exponent diagonal and corresponding transport matrix (second order in kx and kz)" ;
+idtm[                         (* -- id thin insertion diagonal and transport matrix *)
+	{kx_, kz_},               (* -- focusing strength (1/m) *)
+	count_,                   (* -- total number of (super) periods *)
+	period_,                  (* -- (super) period length (m) *)
+	delta_                    (* -- energy delta *)
+] := Block[
+	{a, b, c, d, diagonal, matrix},
+	a = (kx*count)/(1 + delta) - (kx^2*period*count*(-1 + count^2))/(6*(1 + delta)^3) ;
+	b = (kx*period^2*count*(-1 + count^2))/(12*(1 + delta)^3) + (kx^2*period^3*count*(-1 + count^4))/(120*(1 + delta)^5) ;
+	c = (kz*count)/(1 + delta) - (kz^2*period*count*(-1 + count^2))/(6*(1 + delta)^3); 
+	d = (kz*period^2*count*(-1 + count^2))/(12*(1 + delta)^3) + (kz^2*period^3*count*(-1 + count^4))/(120*(1 + delta)^5) ;
+	diagonal = {a, b, c, d} ;
+	matrix = MatrixExp[{{0, 1, 0, 0}, {-1, 0, 0, 0}, {0, 0, 0, 1}, {0, 0, -1, 0}} . DiagonalMatrix[diagonal]] ;
+	{diagonal, matrix}   
 ] ;
 
 (* --------- Transport matrix --------- *)
