@@ -262,85 +262,6 @@ Close[file];
 radUtiDmpPrs[dmp]
 ];
 
-(* --------- Part of RadiaToTrack.nb --------- *)
-
-harm[gg_,typ_,per_,pos_,n_:1]:=Module[
-	{c,s,t},
-	nn=19*n;
-	t=radFldLst[gg,typ,pos-{0,per/2,0},pos+{0,per/2,0},nn];
-	t[[nn]] /=2;t[[1]] /=2;
-	c=Table[Cos[n*2*\[Pi]*(i-1)/(nn-1)],{i,1,nn}];
-	s=Table[Sin[n*2*\[Pi]*(i-1)/(nn-1)],{i,1,nn}];
-	c=Apply[Plus,c*t]*2/(nn-1);
-	s=Apply[Plus,s*t]*2/(nn-1);
-	{Sqrt[c*c+s*s],ArcTan[s/c]}
-];
-
-brms[gg_,typ_,per_,pos_,n_:1]:=Module[
-	{s,t},
-	nn=Round[9*n];
-	t=radFldLst[gg,typ,pos-{0,per/2,0},pos+{0,per/2,0},nn];
-	t=t*t;
-	t[[nn]] /=2;t[[1]] /=2;
-	s=Sqrt[Apply[Plus,t]/(nn-1)]
-];
-
-(* return the fundamental in keV  *)
-fund[gg_,p_,per_,ener_]:=Module[
-	{bx,bz},
-	bz=harm[gg,"bz",per,{0,0,0},1][[1]];
-	bx=harm[gg,"bx",per,{0,0,0},1][[1]];
-	9.5*ener*ener/per/(1+0.5*(0.0934*per*bz)^2+0.5*(0.0934*per*bx)^2)
-];
-
-(* en T2mm3  *)
-pot[gg_,{x_,z_},per_,len_,prec_:1]:=Module[
-	{tx,tz},
-	tz=harm[gg,"bz",per,{x,0,z},1][[1]];
-	tx=harm[gg,"bx",per,{x,0,z},1][[1]];
-	0.5*(tx*tx+tz*tz)*len*(per/2/Pi)^2
-];
-
-(* ener in GeV per and len in millimeter angx, angz and in micro-rad  vx , vz in meter-1  *)
-
-(* ener in GeV per and len in millimeter 
- angx,angz and in micro-rad 
-vx , vz in meter-1  *)
-
-angx[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
-	{p1,p2,h},
-	h=0.2;
-	p1=pot[gg,{x-h/2,z},per,len,prec];
-	p2=pot[gg,{x+h/2,z},per,len,prec];
-	(p2-p1)/h*0.5*(0.2998/ener)^2
-] ;
-
-angz[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
-	{p1,p2,h},
-	h=0.2;
-	p1=pot[gg,{x,z-h/2},per,len,prec];
-	p2=pot[gg,{x,z+h/2},per,len,prec];
-	(p2-p1)/h*0.5*(0.2998/ener)^2
-];
-
-vx[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
-	{p1,p2,p3,h},
-	h=0.2;
-	p1=pot[gg,{x-h/2,z},per,len,prec];
-	p2=pot[gg,{x,z},per,len,prec];
-	p3=pot[gg,{x+h/2,z},per,len,prec];
-	4*(p1+p3-2*p2)/h^2*0.5*(0.2998/ener)^2
-] ;
-
-vz[gg_,{x_,z_},per_,len_,ener_,prec_:1]:= Module[
-	{p1,p2,p3,h},
-	h=0.2;
-	p1=pot[gg,{x,z-h/2},per,len,prec];
-	p2=pot[gg,{x,z},per,len,prec];
-	p3=pot[gg,{x,z+h/2},per,len,prec];
-	4*(p1+p3-2*p2)/h^2*0.5*(0.2998/ener)^2
-] ;
-
 (* --------- RadFldPtcTrj --------- *)
 
 ClearAll[RadFldPtcTrj] ;
@@ -471,27 +392,156 @@ transport[object_, energy_, delta_, {start_, stop_}, steps_, angles_:{0.0, 0.0, 
     {QX, PX, QZ, PZ}
 ] ;
 
+ClearAll[amplitude] ;
+Options[amplitude] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+amplitude::usage = "amplitude[object, component, period, reference, harmonic, options] -- compute the amplitude of the n-th fourier harmonic of given periodic field component over one longitudinal period centered at given reference point using trapezoidal rule " ;
+amplitude[                    (* -- amplitude *)
+    object_,                  (* -- radia object *)
+    component_,               (* -- field component *)
+    period_,                  (* -- longitudinal period (mm) *)
+    reference_,               (* -- reference point (mm) *)
+    harmonic_,                (* -- harmonic number *)
+    options:OptionsPattern[]  (* -- options *)
+] := Block[
+    {count, fields, weights, range, angles, cos, sin},
+    count = If[OptionValue["Samples"] === Automatic, harmonic*OptionValue["SamplesPerHarmonic"], OptionValue["Samples"]] ;
+    fields = radFldLst[object, component, reference - {0, period/2, 0}, reference + {0, period/2, 0}, count] ;
+    weights = ConstantArray[1.0, count] ;
+    weights[[+1]] = 0.5 ;
+    weights[[-1]] = 0.5 ;
+    range = Range[0, count - 1] ;
+    angles = 2*Pi*harmonic*range/(count - 1) ;
+    cos = (2/(count - 1))*Total[weights*fields*Cos[angles]] ;
+    sin = (2/(count - 1))*Total[weights*fields*Sin[angles]] ;
+    Sqrt[cos^2 + sin^2]
+] ;
+
+ClearAll[potential] ;
+Options[potential] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+potential::usage = "potential[object, {x, z}, periods, harmonics, shift, options] -- compute Elleaume one-(super)period potenial " ;
+potential[                    (* -- potential (T^2 mm^3 *)
+    object_,                  (* -- radia object *)
+    {x_, z_},                 (* -- transverse evaluation point (mm) *)
+    periods_,                 (* -- horizontal and vertival periods (mm), {ph, pv} = {n*p, p} or {p, n*p} and n*p -- super-period *)
+    harmonics_,               (* -- list of harmonics *)
+    shift_,                   (* -- longitudinal shift/position (mm) *)
+    options:OptionsPattern[]  (* -- options *)
+] := Block[{period, length, hx, hz, bx, bz},
+  period = Max[periods] ;
+  {hx, hz} = Round[period/periods] ;
+  bx = Table[amplitude[object, "bx", period, {x, shift, z}, hx*harmonic, Sequence @@ FilterRules[{options}, Options[amplitude]]], {harmonic, harmonics}] ;
+  bz = Table[amplitude[object, "bz", period, {x, shift, z}, hz*harmonic, Sequence @@ FilterRules[{options}, Options[amplitude]]], {harmonic, harmonics}] ;
+  0.5*period*(period/(2*Pi))^2*Total[(bx^2/hx^2 + bz^2/hz^2)/harmonics^2]
+] ;
+
+ClearAll[dxp] ;
+Options[dxp] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+dxp::usage = "dxp[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute one-(super) period horizontal angle kick (murad) using central finite difference" ;
+dxp[                          (* -- one-(super) period horizontal angle kick (murad) *)
+    object_,                  (* -- radia object *)
+    {x_, z_},                 (* -- transverse evaluation point (mm) *)
+    periods_,                 (* -- horizontal and vertival periods (mm), {ph, pv} = {n*p, p} or {p, n*p} and n*p -- super-period *)
+    harmonics_,               (* -- list of harmonics *)
+    shift_,                   (* -- longitudinal shift/position (mm) *)
+    energy_,                  (* -- reference energy (GeV) *)
+    delta_,                   (* -- finite difference delta (mm) *)
+    options:OptionsPattern[]  (* -- options *)
+] := Block[{pa, pb},
+    pa = potential[object, {x - delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    pb = potential[object, {x + delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    (pb - pa)/delta*0.5*(0.2998/energy)^2
+] ;
+
+ClearAll[dzp] ;
+Options[dzp] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+dzp::usage = "dzp[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute one-(super) period vertical angle kick (murad) using central finite difference" ;
+dzp[                          (* -- one-(super) period vertical angle kick (murad) *)
+    object_,                  (* -- radia object *)
+    {x_, z_},                 (* -- transverse evaluation point (mm) *)
+    periods_,                 (* -- horizontal and vertival periods (mm), {ph, pv} = {n*p, p} or {p, n*p} and n*p -- super-period *)
+    harmonics_,               (* -- list of harmonics *)
+    shift_,                   (* -- longitudinal shift/position (mm) *)
+    energy_,                  (* -- reference energy (GeV) *)
+    delta_,                   (* -- finite difference delta (mm) *)
+    options:OptionsPattern[]  (* -- options *)
+] := Block[{pa, pb},
+    pa = potential[object, {x, z - delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    pb = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    (pb - pa)/delta*0.5*(0.2998/energy)^2
+] ;
+
+ClearAll[kx] ;
+Options[kx] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+kx::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute horizontal focusing strength (1/m) using central finite difference" ;
+kx[                           (* -- horizontal focusing strength (1/m) *)
+    object_,                  (* -- radia object *)
+    {x_, z_},                 (* -- transverse evaluation point (mm) *)
+    periods_,                 (* -- horizontal and vertival periods (mm), {ph, pv} = {n*p, p} or {p, n*p} and n*p -- super-period *)
+    harmonics_,               (* -- list of harmonics *)
+    shift_,                   (* -- longitudinal shift/position (mm) *)
+    energy_,                  (* -- reference energy (GeV) *)
+    delta_,                   (* -- finite difference delta (mm) *)
+    options:OptionsPattern[]  (* -- options *)
+] := Block[{pa, pb, pc},
+    pa = potential[object, {x - delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    pb = potential[object, {x, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    pc = potential[object, {x + delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
+] ;
+
+ClearAll[kz] ;
+Options[kz] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+kz::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute vertical focusing strength (1/m) using central finite difference" ;
+kz[                           (* -- vertical focusing strength (1/m) *)
+    object_,                  (* -- radia object *)
+    {x_, z_},                 (* -- transverse evaluation point (mm) *)
+    periods_,                 (* -- horizontal and vertival periods (mm), {ph, pv} = {n*p, p} or {p, n*p} and n*p -- super-period *)
+    harmonics_,               (* -- list of harmonics *)
+    shift_,                   (* -- longitudinal shift/position (mm) *)
+    energy_,                  (* -- reference energy (GeV) *)
+    delta_,                   (* -- finite difference delta (mm) *)
+    options:OptionsPattern[]  (* -- options *)
+] := Block[{pa, pb, pc},
+    pa = potential[object, {x, z - delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    pb = potential[object, {x, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    pc = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
+    4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
+] ;
+
 ClearAll[dkd] ;
-dkd::usage = "dkd[object, energy, delta, period, count][{qx, px, qz, pz}] -- drift-kick-drift kick map canonical tracking (period in mm, x and z in m)" ;
-dkd[object_, energy_, delta_, period_, count_][state_] := Block[
-    {QX, PX, QZ, PZ, X, XP, Z, ZP, DL},
+Options[dkd] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
+dkd::usage = "dkd[object, energy, delta, periods, harmonics, shift, step, count, factors, options][{qx, px, qz, pz}] -- drift-kick-drift canonical tracking (period in mm, x and z in m)" ;
+dkd[                          (* -- rdrift-kick-drift canonical tracking *)
+	object_,                  (* -- radia object *)
+	energy_,                  (* -- reference energy (GeV) *)
+	delta_,                   (* -- energy delta *)
+	periods_,                 (* -- horizontal and vertival periods (mm), {ph, pv} = {n*p, p} or {p, n*p} and n*p -- super-period *)
+	harmonics_,               (* -- list of harmonics *)
+	shift_,                   (* -- longitudinal shift/position (mm) *)
+	step_,                    (* -- finite difference delta (mm) *)
+	count_,                   (* -- total number of (super) periods *)
+	factors_:{1.0, 1.0},      (* -- extra kick multiplicaton factors *)
+    options:OptionsPattern[]  (* -- options *)
+][state_] := Block[
+    {FX, FZ, QX, PX, QZ, PZ, X, XP, Z, ZP, DL},
+    {FX, FZ} = factors ;
     {QX, PX, QZ, PZ} = state ;
-    DL = period/2/1000.0 ;
+    DL = Max[periods]/2/10.0^3 ;
     {QX, PX, QZ, PZ} = {QX - count*DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ - count*DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
-	Do[
+    Do[
 		{QX, PX, QZ, PZ} = {QX + DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ + DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
 		{X, XP, Z, ZP} = {QX, PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], QZ, PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2]} ;
 		{X, XP, Z, ZP} = {
 			X,
-			XP - angx[object, 10.0^3*{X, Z}, period, period, energy*(1 + delta)]*10.0^-6,
+			XP - FX*dxp[object, 10.0^3*{X, Z}, periods, harmonics, shift, energy*(1 + delta), step, Sequence @@ FilterRules[{options}, Options[potential]]]*10^-6,
 			Z,
-			ZP - angz[object, 10.0^3*{X, Z}, period, period, energy*(1 + delta)]*10.0^-6
+			ZP - FZ*dzp[object, 10.0^3*{X, Z}, periods, harmonics, shift, energy*(1 + delta), step, Sequence @@ FilterRules[{options}, Options[potential]]]*10^-6
 		} ;
 		{QX, PX, QZ, PZ} = {X, (1 + delta)*XP/Sqrt[1 + XP^2 + ZP^2], Z, (1 + delta)*ZP/Sqrt[1 + XP^2 + ZP^2]} ;
-		{QX, PX, QZ, PZ} = {QX + DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ + DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
-		, count
+		{QX, PX, QZ, PZ} = {QX + DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ + DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ},
+		count
 	] ;
-	{QX, PX, QZ, PZ} = {QX - count*DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ - count*DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
+    {QX, PX, QZ, PZ} = {QX - count*DL*PX/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PX, QZ - count*DL*PZ/Sqrt[(1 + delta)^2 - PX^2 - PZ^2], PZ} ;
 	{QX, PX, QZ, PZ}
 ] ;
 
