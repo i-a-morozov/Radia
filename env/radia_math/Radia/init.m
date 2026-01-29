@@ -268,7 +268,7 @@ ClearAll[RadFldPtcTrj] ;
 Options[RadFldPtcTrj] = {
 	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}}
 } ;
-RadFldPtcTrj::usage="RadFldPtcTrj[obj, E, {x0, dxdy0, z0, dzdy0}, {y0, y1}, np] computes transverse coordinates and its derivatives (angles) of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default options). The particle energy is E [GeV], initial transverse coordinates and derivatives are {x0,dxdy0,z0,dzdy0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters and angles in radians." ;
+RadFldPtcTrj::usage="RadFldPtcTrj[obj, E, {x0, dxdy0, z0, dzdy0}, {y0, y1}, np] -- compute transverse coordinates and its derivatives (angles/slopes) of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default method options). The particle energy is E [GeV], initial transverse coordinates and derivatives are {x0, dxdy0, z0, dzdy0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters and angles in radians." ;
 RadFldPtcTrj[obj_, E_, {x0_, dxdy0_, z0_, dzdy0_}, {y0_, y1_}, np_, options:OptionsPattern[]] := Block[
 	{alpha, bx, by, bz, system, x, xp, z, zp, xi, xpi, zi, zpi, y, solver, table, functions, positions},
 	alpha = (0.299792458/E)/1000.0 ;
@@ -306,7 +306,7 @@ Options[RadFldPtcTrjCnn] = {
 	"Delta" -> {0.1, 0.1},
 	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}}
 } ;
-RadFldPtcTrjCnn::usage="RadFldPtcTrjCnn[obj, E, dE, {qx0, px0, qz0, pz0}, {y0, y1}, np, {extAx, extAy, extAz}] computes transverse canonical coordinates of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default options). The particle energy is E [GeV], initial transverse canonical coordinates are {qx0, px0, qz0, pz0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters." ;
+RadFldPtcTrjCnn::usage="RadFldPtcTrjCnn[obj, E, dE, {qx0, px0, qz0, pz0}, {y0, y1}, np, {extAx, extAy, extAz}] -- compute transverse canonical coordinates of a relativistic charged particle trajectory in 3D magnetic field produced by the object obj, using the NDSolve interface (see default options). The particle energy is E [GeV], initial transverse canonical coordinates are {qx0, px0, qz0, pz0}; the longitudinal coordinate y is varied from y0 to y1 in np steps. All positions are in millimeters." ;
 RadFldPtcTrjCnn[obj_, E_, dE_, {qx0_, px0_, qz0_, pz0_}, {y0_, y1_}, np_, {extAx_, extAy_, extAz_}, options : OptionsPattern[]] := Block[
 	{alpha, Ax, Ay, Az, ax, ay, az, daxdx, daydx, dazdx, daxdz, daydz, dazdz, hx, hz, flow, system, y, qx, qz, px, pz, qxi, qzi, pxi, pzi, solver, functions, positions},
 	alpha = -(0.299792458/E)/1000.0 ;
@@ -364,13 +364,24 @@ RadFldPtcTrjCnn[obj_, E_, dE_, {qx0_, px0_, qz0_, pz0_}, {y0_, y1_}, np_, {extAx
 	Map[Flatten, Transpose[{positions, Map[Function[{position}, Through[functions[position]]], positions]}]]
 ] ;
 
+(* --------- transport --------- *)
+
 ClearAll[transport] ;
 Options[transport] = {
 	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}},
 	"Thin" -> True
 } ;
 transport::usage = "transport[object, energy, delta, {start, stop}, steps, angles, solver][{qx, px, qz, pz}] -- track canonical initial condition (qx, px, qz, pz) with (qx, qz in m) through slope-based solver (x and z in mm)" ;
-transport[object_, energy_, delta_, {start_, stop_}, steps_, angles_:{0.0, 0.0, 0.0, 0.0}, solver_:radFldPtcTrj, options:OptionsPattern[]][state_] := Block[
+transport[
+	object_,                  (* -- magnet object *)
+	energy_,                  (* -- reference energy (GeV) *)
+	delta_,                   (* -- energy deviation *)
+	{start_, stop_},          (* -- integration start and stop positions relative to the object *)
+	steps_,                   (* -- number of integration steps *)
+	angles_:{0, 0, 0, 0},     (* -- angle kicks to be added to canonical momenta on entrance and exit (cxi, czi, cxf, czf) *)
+	solver_:radFldPtcTrj,     (* -- solver (radFldPtcTrj or RadFldPtcTrj) *)
+	options:OptionsPattern[]  (* -- options *)
+][state_] := Block[
 	{QX, PX, QZ, PZ, X, XP, Z, ZP, CXI, CZI, CXF, CZF},
 	{QX, PX, QZ, PZ} = state ;
 	{CXI, CZI, CXF, CZF} = angles ;
@@ -391,6 +402,8 @@ transport[object_, energy_, delta_, {start_, stop_}, steps_, angles_:{0.0, 0.0, 
 	] ;
     {QX, PX, QZ, PZ}
 ] ;
+
+(* --------- amplitude --------- *)
 
 ClearAll[amplitude] ;
 Options[amplitude] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
@@ -416,6 +429,8 @@ amplitude[                    (* -- amplitude *)
     Sqrt[cos^2 + sin^2]
 ] ;
 
+(* --------- Elleaume potential (periodic field) --------- *)
+
 ClearAll[potential] ;
 Options[potential] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
 potential::usage = "potential[object, {x, z}, periods, harmonics, shift, options] -- compute Elleaume one-(super)period potenial " ;
@@ -433,6 +448,8 @@ potential[                    (* -- potential (T^2 mm^3 *)
   bz = Table[amplitude[object, "bz", period, {x, shift, z}, hz*harmonic, Sequence @@ FilterRules[{options}, Options[amplitude]]], {harmonic, harmonics}] ;
   0.5*period*(period/(2*Pi))^2*Total[(bx^2/hx^2 + bz^2/hz^2)/harmonics^2]
 ] ;
+
+(* --------- horizontal slope kick (period) --------- *)
 
 ClearAll[dxp] ;
 Options[dxp] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
@@ -452,6 +469,8 @@ dxp[                          (* -- one-(super) period horizontal angle kick (mu
     (pb - pa)/delta*0.5*(0.2998/energy)^2
 ] ;
 
+(* --------- vertical slope kick (period) --------- *)
+
 ClearAll[dzp] ;
 Options[dzp] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
 dzp::usage = "dzp[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute one-(super) period vertical angle kick (murad) using central finite difference" ;
@@ -469,6 +488,8 @@ dzp[                          (* -- one-(super) period vertical angle kick (mura
     pb = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     (pb - pa)/delta*0.5*(0.2998/energy)^2
 ] ;
+
+(* --------- horizontal focusing strength (period) --------- *)
 
 ClearAll[kx] ;
 Options[kx] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
@@ -489,6 +510,8 @@ kx[                           (* -- horizontal focusing strength (1/m) *)
     10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
 ] ;
 
+(* --------- vertical focusing strength (period) --------- *)
+
 ClearAll[kz] ;
 Options[kz] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
 kz::usage = "kx[object, {x, z}, periods, harmonics, shift, energy, delta, options] -- compute vertical focusing strength using central finite difference" ;
@@ -507,6 +530,8 @@ kz[                           (* -- vertical focusing strength (1/m) *)
     pc = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
 ] ;
+
+(* --------- dkd potential based tracking --------- *)
 
 ClearAll[dkd] ;
 Options[dkd] = {"SamplesPerHarmonic" -> 32, "Samples" -> Automatic} ;
@@ -545,6 +570,8 @@ dkd[                          (* -- rdrift-kick-drift canonical tracking *)
 	{QX, PX, QZ, PZ}
 ] ;
 
+(* --------- explicit ID transport matrix (appoximate) --------- *)
+
 ClearAll[idtm] ;
 idtm::usage = "idtm[{kx, kz}, {np, lp}, dp] -- compute id thin insertion exponent diagonal and corresponding transport matrix (second order in kx and kz)" ;
 idtm[                         (* -- id thin insertion diagonal and transport matrix *)
@@ -563,10 +590,12 @@ idtm[                         (* -- id thin insertion diagonal and transport mat
 	{diagonal, matrix}   
 ] ;
 
-(* --------- Transport matrix --------- *)
+(* --------- symplectic identity matrix --------- *)
 
 ClearAll[identity] ;
 identity[dimension_] := KroneckerProduct[IdentityMatrix[dimension], {{0, 1}, {-1, 0}}] ;
+
+(* --------- symplectify --------- *)
 
 ClearAll[symplectify] ;
 symplectify::usage = "symplectify[matrix] -- symplectify given matrix (symplectic projection)" ;
@@ -581,18 +610,32 @@ symplectify[matrix_] := Block[
   LinearSolve[S + W, S - W]
 ] ;
 
+(* --------- transport matrix --------- *)
+
 ClearAll[matrix] ;
 Options[matrix] = {
 	Method -> {"FixedStep", Method -> {"StiffnessSwitching", Method -> {"ExplicitRungeKutta", Automatic}}},
 	"Thin" -> True
 } ;
 matrix::usage = "matrix[object, energy, delta, {start, stop}, steps, angles, epsilon, solver] -- compute transport matrix " ;
-matrix[object_, energy_, delta_, {start_, stop_}, steps_, angles_, epsilon_, solver_:radFldPtcTrj, options:OptionsPattern[]] := Block[
+matrix[
+	object_,                  (* -- magnet object *)
+	energy_,                  (* -- reference energy (GeV) *)
+	delta_,                   (* -- energy deviation *)
+	{start_, stop_},          (* -- integration start and stop positions relative to the object *)
+	steps_,                   (* -- number of integration steps *)
+	angles_,                  (* -- angle kicks to be added to canonical momenta on entrance and exit (cxi, czi, cxf, czf) *)
+	epsilon_,                 (* -- epsilon initial condition *)
+	solver_:radFldPtcTrj,     (* -- solver (radFldPtcTrj or RadFldPtcTrj) *)
+	options:OptionsPattern[]  (* -- options *)
+] := Block[
 	{initial, positive, negative},
 	positive = transport[object, energy, delta, {start, stop}, steps, angles, solver, options] /@ (+ epsilon*IdentityMatrix[4]) ;
 	negative = transport[object, energy, delta, {start, stop}, steps, angles, solver, options] /@ (- epsilon*IdentityMatrix[4]) ;
 	Transpose[(positive - negative)/(2*epsilon)]
 ] ;
+
+(* --------- transport matrix (parameterization) --------- *)
 
 ClearAll[parameterize] ;
 Options[parameterize] = {
@@ -600,7 +643,17 @@ Options[parameterize] = {
 	"Thin" -> True
 } ;
 parameterize::usage = "parameterize[object, energy, delta, {start, stop}, steps, angles, epsilon, solver] -- parameterize transport matrix" ;
-parameterize[object_, energy_, delta_, {start_, stop_}, steps_, angles_, epsilon_, solver_:radFldPtcTrj, options:OptionsPattern[]] := Block[
+parameterize[
+	object_,                  (* -- magnet object *)
+	energy_,                  (* -- reference energy (GeV) *)
+	delta_,                   (* -- energy deviation *)
+	{start_, stop_},          (* -- integration start and stop positions relative to the object *)
+	steps_,                   (* -- number of integration steps *)
+	angles_,                  (* -- angle kicks to be added to canonical momenta on entrance and exit (cxi, czi, cxf, czf) *)
+	epsilon_,                 (* -- epsilon initial condition *)
+	solver_:radFldPtcTrj,     (* -- solver (radFldPtcTrj or RadFldPtcTrj) *)
+	options:OptionsPattern[]  (* -- options *)
+] := Block[
 	{transport, symplectic, positive, negative, derivative, identity, A, B},
 	transport = matrix[object, energy, 0.0, {start, stop}, steps, epsilon, solver, options] ;
 	symplectic = symplectify[transport] ;
@@ -612,6 +665,7 @@ parameterize[object_, energy_, delta_, {start_, stop_}, steps_, angles_, epsilon
 	B = - identity . MatrixExp[- identity . A] . derivative ;
 	{transport, symplectic, A, B, 1/2 (B + Transpose[B])}
 ] ;
+
 
 (* --------- Only Usefull for Mathmatica 2.2 --------- *)
 
