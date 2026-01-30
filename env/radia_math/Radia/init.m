@@ -466,7 +466,7 @@ dxp[                          (* -- one-(super) period horizontal angle kick (mu
 ] := Block[{pa, pb},
     pa = potential[object, {x - delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pb = potential[object, {x + delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
-    (pb - pa)/delta*0.5*(0.2998/energy)^2
+    (pb - pa)/delta*0.5*(0.299792458/energy)^2
 ] ;
 
 (* --------- vertical slope kick (period) --------- *)
@@ -486,7 +486,7 @@ dzp[                          (* -- one-(super) period vertical angle kick (mura
 ] := Block[{pa, pb},
     pa = potential[object, {x, z - delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pb = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
-    (pb - pa)/delta*0.5*(0.2998/energy)^2
+    (pb - pa)/delta*0.5*(0.299792458/energy)^2
 ] ;
 
 (* --------- horizontal focusing strength (period) --------- *)
@@ -507,7 +507,7 @@ kx[                           (* -- horizontal focusing strength (1/m) *)
     pa = potential[object, {x - delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pb = potential[object, {x, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pc = potential[object, {x + delta/2, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
-    10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
+    10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.299792458/energy)^2
 ] ;
 
 (* --------- vertical focusing strength (period) --------- *)
@@ -528,7 +528,7 @@ kz[                           (* -- vertical focusing strength (1/m) *)
     pa = potential[object, {x, z - delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pb = potential[object, {x, z}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
     pc = potential[object, {x, z + delta/2}, periods, harmonics, shift, Sequence @@ FilterRules[{options}, Options[potential]]] ;
-    10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.2998/energy)^2
+    10.0^-3*4*(pa - 2*pb + pc)/delta^2*0.5*(0.299792458/energy)^2
 ] ;
 
 (* --------- dkd potential based tracking --------- *)
